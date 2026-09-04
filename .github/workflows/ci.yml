@@ -36,11 +36,17 @@ jobs:
         if: runner.os == 'Linux' # formatting is platform-independent
         run: cargo fmt --all --check
 
+      # Both configurations: the crate is dependency-free by default, and the
+      # `serde` feature is the only thing that changes that.
       - name: Clippy (warnings denied)
-        run: cargo clippy --all-targets -- -D warnings
+        run: |
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: |
+          cargo test
+          cargo test --all-features
 
   msrv:
     name: MSRV (Rust 1.88)
@@ -60,8 +66,8 @@ jobs:
         with:
           key: msrv
 
-      - name: cargo check --all-targets
-        run: cargo check --all-targets
+      - name: cargo check --all-targets --all-features
+        run: cargo check --all-targets --all-features
 
   docs:
     name: Docs build (warnings denied)
@@ -77,5 +83,5 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: cargo doc --no-deps
-        run: cargo doc --no-deps
+      - name: cargo doc --no-deps --all-features
+        run: cargo doc --no-deps --all-features

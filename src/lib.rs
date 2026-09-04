@@ -67,6 +67,8 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+// On docs.rs, mark what the `serde` feature adds.
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod datetime;
 mod error;
@@ -74,6 +76,9 @@ mod macros;
 mod map;
 mod parser;
 mod ser;
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+pub mod serde;
 mod value;
 
 pub use crate::datetime::{Date, Datetime, DatetimeKind, Offset, Time};

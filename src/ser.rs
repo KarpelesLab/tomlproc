@@ -68,6 +68,15 @@ fn is_section(value: &Value) -> bool {
     }
 }
 
+/// Whether a table needs a `[header]` line of its own.
+///
+/// A table holding nothing but sub-tables is already implied by their headers,
+/// so `[servers]` above `[servers.alpha]` is noise. An empty table has nothing
+/// to imply it, so it keeps its header.
+fn needs_header(table: &Table) -> bool {
+    table.is_empty() || table.values().any(|value| !is_section(value))
+}
+
 fn write_table(out: &mut String, table: &Table, path: &mut Vec<String>, style: Style) {
     // Every plain key has to come before the first sub-table header, or it
     // would land in that sub-table instead.
@@ -86,7 +95,9 @@ fn write_table(out: &mut String, table: &Table, path: &mut Vec<String>, style: S
         path.push(key_to_string(key));
         match value {
             Value::Table(child) => {
-                write_header(out, path, false);
+                if needs_header(child) {
+                    write_header(out, path, false);
+                }
                 write_table(out, child, path, style);
             }
             Value::Array(items) => {

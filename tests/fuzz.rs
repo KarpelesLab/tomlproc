@@ -134,3 +134,30 @@ fn truncations_of_a_real_document_never_panic() {
         }
     }
 }
+
+/// Whatever the parser accepts must survive a trip through serde unchanged.
+#[cfg(feature = "serde")]
+#[test]
+fn serde_round_trips_what_the_parser_accepts() {
+    let mut rng = Rng(0x5E12_DE00_1979_0527);
+    for _ in 0..20_000 {
+        let mut input = String::new();
+        for _ in 0..rng.below(24) {
+            input.push_str(rng.pick(PIECES));
+        }
+        let Ok(table) = parse(&input) else { continue };
+
+        // Compared as text throughout: a document holding a NaN is never equal
+        // to itself.
+        let value = tomlproc::serde::to_value(&table).expect("a table always serializes");
+        let serialized = value.as_table().expect("a table serializes as a table");
+        assert_eq!(to_string(serialized), to_string(&table), "input {input:?}");
+
+        let back: tomlproc::Table =
+            tomlproc::serde::from_value(value).expect("a table deserializes");
+        assert_eq!(to_string(&back), to_string(&table), "input {input:?}");
+
+        let text = tomlproc::serde::to_string(&table).expect("a table serializes to a document");
+        assert_eq!(text, to_string(&table), "input {input:?}");
+    }
+}

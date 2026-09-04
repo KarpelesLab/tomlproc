@@ -276,3 +276,26 @@ fn pretty_and_plain_agree_on_the_document() {
     let doc = parse(EXAMPLE).unwrap();
     assert_eq!(parse(&to_string_pretty(&doc)).unwrap(), doc);
 }
+
+#[test]
+fn a_table_of_only_sub_tables_needs_no_header_of_its_own() {
+    // `[servers]` would be implied by `[servers.alpha]`, so it is left out.
+    let doc =
+        parse("[servers]\n[servers.alpha]\nip = \"a\"\n[servers.beta]\nip = \"b\"\n").unwrap();
+    assert_eq!(
+        to_string(&doc),
+        "[servers.alpha]\nip = \"a\"\n\n[servers.beta]\nip = \"b\"\n"
+    );
+    assert_eq!(parse(&to_string(&doc)).unwrap(), doc);
+
+    // An empty table has nothing to imply it, so it keeps its header.
+    let doc = parse("[servers]").unwrap();
+    assert_eq!(to_string(&doc), "[servers]\n");
+
+    // ...and so does one with a value of its own.
+    let doc = parse("[servers]\ncount = 1\n[servers.alpha]\nip = \"a\"\n").unwrap();
+    assert_eq!(
+        to_string(&doc),
+        "[servers]\ncount = 1\n\n[servers.alpha]\nip = \"a\"\n"
+    );
+}

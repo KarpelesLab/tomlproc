@@ -95,6 +95,39 @@ Values round-trip: parse, serialize and re-parse gives an equal document.
 Formatting does not — comments, blank lines and the choice between a header
 and an inline table belong to the source text, not to the value model.
 
+## serde
+
+Mapping documents onto your own types is behind the off-by-default `serde`
+feature — with it off, the crate still has no dependencies at all:
+
+```toml
+[dependencies]
+tomlproc = { version = "0.1", features = ["serde"] }
+```
+
+```rust
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Config {
+    name: String,
+    ports: Vec<u16>,
+}
+
+let config: Config = tomlproc::serde::from_str(text)?;
+let text = tomlproc::serde::to_string(&config)?;
+```
+
+`Value`, `Table` and `Datetime` implement `Serialize`/`Deserialize`, and
+`tomlproc::serde` provides `from_str`, `from_slice`, `from_value`, `from_table`,
+`to_value`, `to_string` and `to_string_pretty`. Errors name the key that did not
+fit:
+
+```console
+TOML error at `servers.beta.port`: invalid type: string "80", expected u16
+```
+
+`Error::key_path()` returns that path on its own, for building your own
+diagnostics.
+
 ## Conformance
 
 The parser is strict. It rejects, with a position, everything the

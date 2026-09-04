@@ -14,4 +14,22 @@ readme = "README.md"
 # crate; it is development-only and never part of the published package.
 exclude = ["tools"]
 
+[features]
+# No default features: the crate is dependency-free unless you ask for more.
+default = []
+# Serialize/Deserialize for the value model, plus `tomlproc::serde::{from_str,
+# to_string, ...}` for mapping documents onto your own types.
+serde = ["dep:serde"]
+
 [dependencies]
+# The only dependency, and only when the `serde` feature asks for it.
+serde = { version = "1.0", optional = true }
+
+[dev-dependencies]
+# Tests for the `serde` feature derive impls; never built for consumers.
+serde = { version = "1.0", features = ["derive"] }
+
+[package.metadata.docs.rs]
+# Document the `serde` feature's API, marked with the feature it needs.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

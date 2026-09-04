@@ -7,14 +7,19 @@ use core::fmt;
 /// Parse errors carry the 1-based [`line`](Error::line) and
 /// [`column`](Error::column) at which the problem was found, plus the byte
 /// [`offset`](Error::offset) into the input. Errors that are not tied to a
-/// position in a document (for instance, trying to serialize a value that is
-/// not a table) report a line of `0`; see [`Error::has_position`].
+/// position in a document report a line of `0`; see [`Error::has_position`].
+///
+/// Errors raised while mapping a document onto a Rust type instead carry the
+/// [`key_path`](Error::key_path) of the value that would not fit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     message: String,
     line: usize,
     column: usize,
     offset: usize,
+    /// The keys, outermost first, leading to the value this error is about.
+    /// Filled in as the error travels back out of a nested value.
+    path: Vec<String>,
 }
 
 impl Error {
@@ -30,6 +35,7 @@ impl Error {
             line,
             column,
             offset,
+            path: Vec::new(),
         }
     }
 
@@ -40,7 +46,17 @@ impl Error {
             line: 0,
             column: 0,
             offset: 0,
+            path: Vec::new(),
         }
+    }
+
+    /// Records that this error is about a value found under `key`.
+    ///
+    /// Called as the error travels back out of a nested value, so the
+    /// outermost key ends up first.
+    #[cfg_attr(not(feature = "serde"), allow(dead_code))]
+    pub(crate) fn prepend_key(&mut self, key: impl Into<String>) {
+        self.path.insert(0, key.into());
     }
 
     /// The human-readable description of what went wrong, without any position
@@ -71,6 +87,19 @@ impl Error {
     pub fn has_position(&self) -> bool {
         self.line != 0
     }
+
+    /// The dotted path of the key whose value this error is about, if it is
+    /// about one -- `Some("servers.alpha.port")`, say.
+    ///
+    /// Array elements appear as their index. Only errors from the `serde`
+    /// integration carry a path.
+    pub fn key_path(&self) -> Option<String> {
+        if self.path.is_empty() {
+            None
+        } else {
+            Some(self.path.join("."))
+        }
+    }
 }
 
 impl fmt::Display for Error {
@@ -81,6 +110,8 @@ impl fmt::Display for Error {
                 "TOML parse error at line {}, column {}: {}",
                 self.line, self.column, self.message
             )
+        } else if let Some(path) = self.key_path() {
+            write!(f, "TOML error at `{path}`: {}", self.message)
         } else {
             f.write_str(&self.message)
         }
@@ -88,3 +119,17 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[cfg(feature = "serde")]
+impl ::serde::de::Error for Error {
+    fn custom<T: fmt::Display>(message: T) -> Error {
+        Error::custom(message.to_string())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl ::serde::ser::Error for Error {
+    fn custom<T: fmt::Display>(message: T) -> Error {
+        Error::custom(message.to_string())
+    }
+}
