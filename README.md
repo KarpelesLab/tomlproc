@@ -128,6 +128,26 @@ TOML error at `servers.beta.port`: invalid type: string "80", expected u16
 `Error::key_path()` returns that path on its own, for building your own
 diagnostics.
 
+## Diagnostics
+
+`parse_spans` records where every value was written, keyed by the same dotted
+path a `serde` error reports, so the two fit together:
+
+```rust
+let (doc, spans) = tomlproc::parse_spans(source)?;
+
+if let Err(error) = tomlproc::serde::from_table::<Config>(doc) {
+    if let Some(span) = error.key_path().and_then(|path| spans.get(&path)) {
+        eprintln!("{}:{}: {}", span.line, span.column, error.message());
+        eprintln!("  {}", &source[span.value.clone()]);
+    }
+}
+```
+
+Spans are recorded per key/value pair and per table header; a path pointing
+inside a value resolves to the nearest enclosing one. Plain `parse` records
+nothing, and pays nothing.
+
 ## Conformance
 
 The parser is strict. It rejects, with a position, everything the

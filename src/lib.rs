@@ -56,6 +56,15 @@
 //! and the choice between a header and an inline table belong to the document,
 //! not to the value model.
 //!
+//! # Beyond the value model
+//!
+//! [`parse_spans`] also reports where each value was written, so a value that
+//! turns out to be wrong later can be pointed back at its line and column.
+//!
+//! The optional `serde` feature adds [`tomlproc::serde`](crate::serde), which
+//! maps documents onto your own types. It is off by default, and it is the
+//! only thing that gives the crate a dependency.
+//!
 //! # Conformance
 //!
 //! The parser is strict, and rejects what the specification calls invalid:
@@ -79,6 +88,7 @@ mod ser;
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;
+mod span;
 mod value;
 
 pub use crate::datetime::{Date, Datetime, DatetimeKind, Offset, Time};
@@ -87,6 +97,7 @@ pub use crate::map::{
     Entry, IntoIter, Iter, IterMut, Keys, OccupiedEntry, Table, VacantEntry, Values, ValuesMut,
 };
 pub use crate::ser::{to_string, to_string_pretty};
+pub use crate::span::{Span, Spans};
 pub use crate::value::Value;
 
 /// Parses a TOML document.
@@ -96,7 +107,30 @@ pub use crate::value::Value;
 /// assert_eq!(doc["key"].as_str(), Some("value"));
 /// ```
 pub fn parse(input: &str) -> Result<Table, Error> {
-    parser::Parser::new(input).parse()
+    Ok(parser::Parser::new(input, false).parse()?.0)
+}
+
+/// Parses a TOML document, also reporting where each value was written.
+///
+/// The [`Spans`] are keyed by dotted path, the same way
+/// [`Error::key_path`] spells one, so a value that later turns out to be
+/// wrong can be pointed back at its place in the source. Recording them costs
+/// a little time and memory, which is why [`parse`] does not.
+///
+/// ```
+/// let source = "[server]\nport = 8080\n";
+/// let (doc, spans) = tomlproc::parse_spans(source).unwrap();
+///
+/// assert_eq!(doc["server"]["port"].as_integer(), Some(8080));
+///
+/// let span = spans.get("server.port").unwrap();
+/// assert_eq!((span.line, span.column), (2, 1));
+/// assert_eq!(&source[span.value.clone()], "8080");
+/// assert_eq!(&source[span.range.clone()], "port = 8080");
+/// ```
+pub fn parse_spans(input: &str) -> Result<(Table, Spans), Error> {
+    let (table, spans) = parser::Parser::new(input, true).parse()?;
+    Ok((table, spans.expect("spans were asked for")))
 }
 
 /// Parses a TOML document from bytes, which must be UTF-8.

@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use crate::datetime;
 use crate::error::Error;
 use crate::map::Table;
+use crate::span::{Span, Spans};
 use crate::value::Value;
 
 /// How deeply arrays and inline tables may nest.
@@ -60,10 +61,15 @@ pub(crate) struct Parser<'a> {
     /// Arrays declared with `[[header]]`, the only ones a later `[[header]]`
     /// may append to.
     arrays: HashSet<Path>,
+    /// Where each value was written, recorded only when asked for.
+    spans: Option<Spans>,
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn new(src: &'a str) -> Parser<'a> {
+    /// Builds a parser. `spans` asks it to record where each value was
+    /// written, which costs a little time and memory, so it is off unless the
+    /// caller wants it.
+    pub(crate) fn new(src: &'a str, spans: bool) -> Parser<'a> {
         Parser {
             src,
             bytes: src.as_bytes(),
@@ -77,10 +83,11 @@ impl<'a> Parser<'a> {
             dotted: HashSet::new(),
             frozen: HashSet::new(),
             arrays: HashSet::new(),
+            spans: spans.then(Spans::default),
         }
     }
 
-    pub(crate) fn parse(mut self) -> Result<Table, Error> {
+    pub(crate) fn parse(mut self) -> Result<(Table, Option<Spans>), Error> {
         // A leading byte order mark is not part of the document.
         if self.src.starts_with('\u{feff}') {
             self.pos += '\u{feff}'.len_utf8();
@@ -88,7 +95,7 @@ impl<'a> Parser<'a> {
         loop {
             self.skip_trivia()?;
             if self.pos >= self.bytes.len() {
-                return Ok(self.root);
+                return Ok((self.root, self.spans));
             }
             if self.peek() == Some(b'[') {
                 self.parse_header()?;
@@ -120,6 +127,12 @@ impl<'a> Parser<'a> {
     }
 
     fn error_at(&self, pos: usize, message: impl Into<String>) -> Error {
+        let (line, column) = self.position(pos);
+        Error::parse(message, line, column, pos.min(self.src.len()))
+    }
+
+    /// The 1-based line and character column of a byte offset.
+    fn position(&self, pos: usize) -> (usize, usize) {
         let pos = pos.min(self.src.len());
         // Columns are counted in characters. Errors are rare enough that
         // rescanning the line (or, for a position behind the cursor, the whole
@@ -137,8 +150,7 @@ impl<'a> Parser<'a> {
             }
             (line, line_start)
         };
-        let column = self.src[line_start..pos].chars().count() + 1;
-        Error::parse(message, line, column, pos)
+        (line, self.src[line_start..pos].chars().count() + 1)
     }
 
     // ----- whitespace, comments, line structure ---------------------------
@@ -275,8 +287,9 @@ impl<'a> Parser<'a> {
         }
         self.pos += 1;
         self.skip_spaces();
+        let value_start = self.pos;
         let value = self.parse_value()?;
-        self.insert_keyval(keys, value, start)
+        self.insert_keyval(keys, value, start, value_start..self.pos)
     }
 
     // ----- values ---------------------------------------------------------
@@ -704,6 +717,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        self.record_span(&path, start..self.pos, start..self.pos);
         self.current = path;
         Ok(())
     }
@@ -714,6 +728,7 @@ impl<'a> Parser<'a> {
         keys: Vec<String>,
         value: Value,
         start: usize,
+        value_range: core::ops::Range<usize>,
     ) -> Result<(), Error> {
         let mut path = self.current.clone();
         let count = keys.len();
@@ -751,7 +766,31 @@ impl<'a> Parser<'a> {
             self.freeze(&path, &value);
         }
         insert_at(&mut self.root, &path, value);
+        self.record_span(&path, start..value_range.end, value_range);
         Ok(())
+    }
+
+    /// Notes where a value was written, if spans were asked for.
+    fn record_span(
+        &mut self,
+        path: &Path,
+        range: core::ops::Range<usize>,
+        value: core::ops::Range<usize>,
+    ) {
+        if self.spans.is_none() {
+            return;
+        }
+        let (line, column) = self.position(range.start);
+        let key = render_raw(path);
+        self.spans.as_mut().expect("checked above").record(
+            key,
+            Span {
+                range,
+                value,
+                line,
+                column,
+            },
+        );
     }
 
     /// Marks an inline table, and every table nested in it, as sealed.
@@ -819,6 +858,22 @@ fn insert_at(root: &mut Table, path: &[Seg], value: Value) {
     table
         .expect("the parent of an inserted path always exists")
         .insert(key.clone(), value);
+}
+
+/// Renders a path as plain dotted segments, the way an error from the serde
+/// integration spells one, so the two can be matched up.
+fn render_raw(path: &[Seg]) -> String {
+    let mut out = String::new();
+    for seg in path {
+        if !out.is_empty() {
+            out.push('.');
+        }
+        match seg {
+            Seg::Key(key) => out.push_str(key),
+            Seg::Index(i) => out.push_str(&i.to_string()),
+        }
+    }
+    out
 }
 
 /// Renders a path the way it would be written in a document, for error

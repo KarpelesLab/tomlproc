@@ -135,6 +135,41 @@ fn truncations_of_a_real_document_never_panic() {
     }
 }
 
+/// Recording spans must not change what the parser accepts, and every span it
+/// records must be a real, character-aligned slice of the input.
+#[test]
+fn spans_are_always_valid_slices() {
+    let mut rng = Rng(0x5A11_0000_1979_0527);
+    for _ in 0..20_000 {
+        let mut input = String::new();
+        for _ in 0..rng.below(24) {
+            input.push_str(rng.pick(PIECES));
+        }
+        let plain = parse(&input);
+        let spanned = tomlproc::parse_spans(&input);
+        assert_eq!(plain.is_ok(), spanned.is_ok(), "input {input:?}");
+        let Ok((table, spans)) = spanned else {
+            continue;
+        };
+
+        for (path, span) in spans.iter() {
+            // Slicing panics unless the range is in bounds and lands on
+            // character boundaries.
+            let text = &input[span.value.clone()];
+            let whole = &input[span.range.clone()];
+            assert!(whole.contains(text), "input {input:?}: {path}");
+            assert!(
+                span.line >= 1 && span.column >= 1,
+                "input {input:?}: {path}"
+            );
+            assert!(
+                table.get_path(path).is_some(),
+                "input {input:?}: {path} is not in the document"
+            );
+        }
+    }
+}
+
 /// Whatever the parser accepts must survive a trip through serde unchanged.
 #[cfg(feature = "serde")]
 #[test]
