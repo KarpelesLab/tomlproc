@@ -1,0 +1,20 @@
+# A differential-testing harness, kept out of the published crate: `tomlproc`
+# itself has no dependencies, and this compares it against one.
+#
+# `[workspace]` detaches this from the parent package so `cargo build` at the
+# repository root never reaches it, and `exclude = ["tools"]` in the parent
+# manifest keeps it out of the published `.crate` file.
+[workspace]
+
+[package]
+name = "difftest"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The reference implementation. Pinned to the 0.8 line, which targets TOML
+# 1.0.0 -- later releases target the 1.1 draft, whose extra allowances would
+# show up here as spurious disagreements.
+toml = "=0.8.23"
+tomlproc = { path = "../.." }

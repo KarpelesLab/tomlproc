@@ -10,5 +10,8 @@ license = "MIT"
 keywords = ["toml", "parser", "config", "serialization"]
 categories = ["parser-implementations", "config", "encoding"]
 readme = "README.md"
+# `tools/` holds a differential-testing harness that depends on the `toml`
+# crate; it is development-only and never part of the published package.
+exclude = ["tools"]
 
 [dependencies]

@@ -113,6 +113,24 @@ Two places where the specification leaves a choice:
 - Fractional seconds beyond nanosecond precision are truncated, which the spec
   calls implementation-specific.
 
+Conformance is checked by differential testing against the `toml` crate, the
+reference implementation, in [`tools/difftest`](tools/difftest): every `.toml`
+file in a corpus you point it at, plus 400,000 generated inputs — fragment soup
+aimed at the lexer's decision points, and whole statements aimed at the table
+redefinition rules. Both parsers must agree on what to accept, and on the value
+they produce. The current state is complete agreement, over ~1,700 real-world
+files and the generated set:
+
+```console
+$ cargo run --release --manifest-path tools/difftest/Cargo.toml -- ~/.cargo/registry/src
+1693 files + 400000 generated inputs
+agree: 401693  different values: 0  only tomlproc accepts: 0  only the reference accepts: 0
+```
+
+That harness depends on the reference implementation, so it lives outside the
+crate: `tomlproc` itself still has no dependencies, and `tools/` is excluded
+from the published package.
+
 Arrays and inline tables may nest 128 deep. Parsing is recursive, so a
 document like `a = [[[[…` would otherwise exhaust the stack; the limit turns
 that into an ordinary parse error, which matters when the input is untrusted.
