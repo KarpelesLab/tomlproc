@@ -1,0 +1,17 @@
+[package]
+name = "tomlproc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A self-contained TOML 1.0.0 parser and serializer with no external dependencies"
+authors = ["Mark Karpeles <mark@shells.com>"]
+repository = "https://github.com/KarpelesLab/tomlproc"
+keywords = ["toml", "parser", "config", "serialization"]
+categories = ["parser-implementations", "config", "encoding"]
+readme = "README.md"
+
+[dependencies]
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
