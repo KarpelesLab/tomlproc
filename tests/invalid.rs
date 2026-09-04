@@ -181,6 +181,9 @@ fn malformed_numbers() {
         "a = 9223372036854775808",
         "a = -9223372036854775809",
         "a = 0xFFFFFFFFFFFFFFFFF",
+        // Overflowing to infinity is a mistake, not a way to write `inf`.
+        "a = 1e501",
+        "a = -1e501",
     ]);
 }
 

@@ -335,29 +335,36 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Enters a nested value, refusing to recurse past [`MAX_DEPTH`].
+    /// Enters a nested array or inline table, refusing to recurse past
+    /// [`MAX_DEPTH`]. Every caller pairs this with `self.depth -= 1`.
     fn enter(&mut self) -> Result<(), Error> {
-        self.depth += 1;
-        if self.depth > MAX_DEPTH {
+        if self.depth == MAX_DEPTH {
             return self.error(format!(
                 "arrays and inline tables cannot nest more than {MAX_DEPTH} deep"
             ));
         }
+        self.depth += 1;
         Ok(())
     }
 
     fn parse_array(&mut self) -> Result<Value, Error> {
-        let open = self.pos;
         self.enter()?;
+        let array = self.parse_array_items();
+        self.depth -= 1;
+        array
+    }
+
+    fn parse_array_items(&mut self) -> Result<Value, Error> {
+        let open = self.pos;
         self.pos += 1;
         let mut array = Vec::new();
         loop {
+            // Newlines and comments may appear anywhere inside an array.
             self.skip_trivia()?;
             match self.peek() {
                 None => return Err(self.error_at(open, "unterminated array")),
                 Some(b']') => {
                     self.pos += 1;
-                    self.depth -= 1;
                     return Ok(Value::Array(array));
                 }
                 _ => {}
@@ -365,10 +372,11 @@ impl<'a> Parser<'a> {
             array.push(self.parse_value()?);
             self.skip_trivia()?;
             match self.peek() {
+                // A trailing comma is allowed, so the next turn of the loop
+                // may well find the closing bracket.
                 Some(b',') => self.pos += 1,
                 Some(b']') => {
                     self.pos += 1;
-                    self.depth -= 1;
                     return Ok(Value::Array(array));
                 }
                 None => return Err(self.error_at(open, "unterminated array")),
@@ -379,15 +387,20 @@ impl<'a> Parser<'a> {
 
     fn parse_inline_table(&mut self) -> Result<Value, Error> {
         self.enter()?;
+        let table = self.parse_inline_table_entries();
+        self.depth -= 1;
+        table
+    }
+
+    fn parse_inline_table_entries(&mut self) -> Result<Value, Error> {
         self.pos += 1;
         let mut table = Table::new();
         // Tables created by a dotted key *within this inline table*, which the
-        // following pairs may keep extending.
+        // pairs that follow may keep extending.
         let mut dotted = HashSet::new();
         self.skip_spaces();
         if self.peek() == Some(b'}') {
             self.pos += 1;
-            self.depth -= 1;
             return Ok(Value::Table(table));
         }
         loop {
@@ -405,10 +418,11 @@ impl<'a> Parser<'a> {
                 .map_err(|message| self.error_at(key_pos, message))?;
             self.skip_spaces();
             match self.peek() {
+                // No trailing comma, unlike an array: `{ a = 1, }` is invalid,
+                // and the next turn of the loop rejects it at the key.
                 Some(b',') => self.pos += 1,
                 Some(b'}') => {
                     self.pos += 1;
-                    self.depth -= 1;
                     return Ok(Value::Table(table));
                 }
                 // A newline here is the most likely mistake, and TOML 1.0
@@ -927,9 +941,15 @@ fn parse_number_token(token: &str) -> Result<Value, String> {
         return Err(format!("`{token}` is not a valid number"));
     }
     if is_float {
-        out.parse()
-            .map(Value::Float)
-            .map_err(|_| format!("`{token}` is not a valid float"))
+        let float: f64 = out
+            .parse()
+            .map_err(|_| format!("`{token}` is not a valid float"))?;
+        // A literal that overflows to infinity is a mistake, not a way to
+        // write `inf`; the spelled-out `inf` is handled above.
+        if float.is_infinite() {
+            return Err(format!("`{token}` is out of the range of a 64-bit float"));
+        }
+        Ok(Value::Float(float))
     } else {
         out.parse()
             .map(Value::Integer)
