@@ -44,8 +44,7 @@ assert_eq!(doc["owner"]["dob"].as_datetime().unwrap().date.unwrap().year, 1979);
 assert_eq!(doc["server"][0]["ports"][1].as_integer(), Some(8001));
 
 // Or walk a path in one go, without unwrapping at each step.
-let value = tomlproc::Value::Table(doc);
-assert_eq!(value.get_path("server.0.ip").and_then(|v| v.as_str()), Some("10.0.0.1"));
+assert_eq!(doc.get_path("server.0.ip").and_then(|v| v.as_str()), Some("10.0.0.1"));
 ```
 
 Every accessor is type-strict, the way TOML is: `as_float` on an integer is

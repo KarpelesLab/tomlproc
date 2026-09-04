@@ -133,6 +133,36 @@ impl Table {
         }
     }
 
+    /// Follows a dotted path such as `"servers.alpha.ip"`, descending through
+    /// tables and -- for segments that are decimal numbers -- arrays.
+    ///
+    /// Path segments are taken literally, so this cannot reach a key that
+    /// itself contains a `.`; use [`get`](Table::get) at that step instead.
+    ///
+    /// ```
+    /// let doc = tomlproc::parse(r#"
+    ///     [[server]]
+    ///     ip = "10.0.0.1"
+    ///     ports = [80, 443]
+    /// "#).unwrap();
+    ///
+    /// assert_eq!(doc.get_path("server.0.ip").and_then(|v| v.as_str()), Some("10.0.0.1"));
+    /// assert_eq!(doc.get_path("server.0.ports.1").and_then(|v| v.as_integer()), Some(443));
+    /// assert_eq!(doc.get_path("server.1.ip"), None);
+    /// ```
+    pub fn get_path(&self, path: &str) -> Option<&Value> {
+        let mut segments = path.split('.');
+        let mut current = self.get(segments.next()?)?;
+        for segment in segments {
+            current = match current {
+                Value::Table(table) => table.get(segment)?,
+                Value::Array(array) => array.get(segment.parse::<usize>().ok()?)?,
+                _ => return None,
+            };
+        }
+        Some(current)
+    }
+
     /// An iterator over the entries, in insertion order.
     pub fn iter(&self) -> Iter<'_> {
         Iter {
@@ -394,6 +424,21 @@ mod tests {
 
         let c: Table = [("y", 2)].into_iter().collect();
         assert_ne!(a, c);
+    }
+
+    #[test]
+    fn get_path_walks_tables_and_arrays() {
+        let mut table = Table::new();
+        table.insert("a", Value::Array(vec![Value::from([1, 2])]));
+        table.insert("b.c", 3);
+
+        assert_eq!(table.get_path("a.0.1"), Some(&Value::Integer(2)));
+        assert_eq!(table.get_path("a.0.2"), None);
+        assert_eq!(table.get_path("a.x"), None);
+        assert_eq!(table.get_path("nope"), None);
+        // A key containing a dot is out of reach of a path.
+        assert_eq!(table.get_path("b.c"), None);
+        assert_eq!(table.get("b.c"), Some(&Value::Integer(3)));
     }
 
     #[test]
