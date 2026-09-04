@@ -78,7 +78,7 @@ mod value;
 pub use crate::datetime::{Date, Datetime, DatetimeKind, Offset, Time};
 pub use crate::error::Error;
 pub use crate::map::{IntoIter, Iter, IterMut, Keys, Table, Values, ValuesMut};
-pub use crate::ser::to_string;
+pub use crate::ser::{to_string, to_string_pretty};
 pub use crate::value::Value;
 
 /// Parses a TOML document.

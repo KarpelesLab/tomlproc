@@ -87,6 +87,10 @@ Sub-tables are written as `[header]` sections and arrays of tables as
 `[[header]]` sections, with plain keys always emitted ahead of the first
 header, so the output reads like a document a person would write.
 
+`to_string_pretty` writes the same document with values laid out for a reader:
+arrays one element per line, and strings holding newlines as multi-line
+strings rather than one long line of `\n` escapes.
+
 Values round-trip: parse, serialize and re-parse gives an equal document.
 Formatting does not — comments, blank lines and the choice between a header
 and an inline table belong to the source text, not to the value model.

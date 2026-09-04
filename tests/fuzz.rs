@@ -5,7 +5,7 @@
 //! no arithmetic overflow. Whatever it does accept must also survive a
 //! serialize/re-parse round-trip.
 
-use tomlproc::{parse, to_string};
+use tomlproc::{parse, to_string, to_string_pretty};
 
 /// xorshift64*, so a failure reproduces from its seed alone.
 struct Rng(u64);
@@ -100,6 +100,16 @@ fn never_panics_and_round_trips() {
         // Compare the serialized forms: a document holding a NaN is never
         // equal to itself.
         assert_eq!(written, to_string(&reparsed), "input {input:?}");
+
+        let pretty = to_string_pretty(&table);
+        let reparsed = parse(&pretty).unwrap_or_else(|e| {
+            panic!("input {input:?} pretty-wrote {pretty:?} which failed: {e}")
+        });
+        assert_eq!(
+            written,
+            to_string(&reparsed),
+            "input {input:?} pretty-wrote {pretty:?}"
+        );
     }
 }
 

@@ -1,6 +1,6 @@
 //! Writing documents back out, and parse/serialize round-trips.
 
-use tomlproc::{Table, Value, parse, to_string};
+use tomlproc::{Table, Value, parse, to_string, to_string_pretty};
 
 const EXAMPLE: &str = r#"
 # This is the example from the TOML home page.
@@ -207,4 +207,72 @@ fn strings_with_anything_in_them_round_trip() {
         let back = parse(&written).unwrap_or_else(|e| panic!("{written:?}: {e}"));
         assert_eq!(back["x"].as_str(), Some(s), "{written:?}");
     }
+}
+
+#[test]
+fn pretty_output_spreads_arrays_over_lines() {
+    let doc =
+        parse("ports = [8000, 8001]\nempty = []\nnested = [[1, 2], [3]]\nmixed = [1, { a = 1 }]")
+            .unwrap();
+    assert_eq!(
+        to_string_pretty(&doc),
+        "\
+ports = [
+    8000,
+    8001,
+]
+empty = []
+nested = [
+    [
+        1,
+        2,
+    ],
+    [
+        3,
+    ],
+]
+mixed = [
+    1,
+    { a = 1 },
+]
+"
+    );
+}
+
+#[test]
+fn pretty_output_uses_multiline_strings() {
+    let doc = parse("a = \"one\\ntwo\"\nb = \"single line\"").unwrap();
+    assert_eq!(
+        to_string_pretty(&doc),
+        "a = \"\"\"\none\ntwo\"\"\"\nb = \"single line\"\n"
+    );
+}
+
+#[test]
+fn pretty_output_round_trips() {
+    // Everything awkward a multi-line string could hold: quote runs, trailing
+    // quotes and backslashes, tabs and control characters.
+    for s in [
+        "a\nb",
+        "\n",
+        "\n\n",
+        "a\n\"\"\"b",
+        "a\nb\"",
+        "a\nb\\",
+        "a\n\tb",
+        "a\n\u{1}b",
+        "\"\"\"\n\"\"\"",
+    ] {
+        let mut doc = Table::new();
+        doc.insert("x", s);
+        let written = to_string_pretty(&doc);
+        let back = parse(&written).unwrap_or_else(|e| panic!("{written:?}: {e}"));
+        assert_eq!(back["x"].as_str(), Some(s), "{written:?}");
+    }
+}
+
+#[test]
+fn pretty_and_plain_agree_on_the_document() {
+    let doc = parse(EXAMPLE).unwrap();
+    assert_eq!(parse(&to_string_pretty(&doc)).unwrap(), doc);
 }
