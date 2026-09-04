@@ -1,2 +1,10 @@
 /target
-Cargo.lock
+**/*.rs.bk
+*.pdb
+.*.swp
+# Cargo.lock is not committed: this is a library crate, and it has no
+# dependencies to pin in any case.
+/Cargo.lock
+
+# Claude Code session/worktree state
+.claude/
