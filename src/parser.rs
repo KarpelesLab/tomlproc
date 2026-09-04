@@ -12,6 +12,12 @@ use crate::error::Error;
 use crate::map::Table;
 use crate::value::Value;
 
+/// How deeply arrays and inline tables may nest.
+///
+/// Parsing is recursive, so without a cap a document such as `a = [[[[…`
+/// would exhaust the stack. No real document comes close to this.
+const MAX_DEPTH: usize = 128;
+
 /// One step of a path into the document: a table key, or an index into an
 /// array of tables.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -37,6 +43,8 @@ pub(crate) struct Parser<'a> {
     pos: usize,
     line: usize,
     line_start: usize,
+    /// How many arrays and inline tables enclose the cursor.
+    depth: usize,
     root: Table,
     /// The table that bare key/value pairs are currently written into.
     current: Path,
@@ -62,6 +70,7 @@ impl<'a> Parser<'a> {
             pos: 0,
             line: 1,
             line_start: 0,
+            depth: 0,
             root: Table::new(),
             current: Path::new(),
             implicit: HashSet::new(),
@@ -326,8 +335,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Enters a nested value, refusing to recurse past [`MAX_DEPTH`].
+    fn enter(&mut self) -> Result<(), Error> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            return self.error(format!(
+                "arrays and inline tables cannot nest more than {MAX_DEPTH} deep"
+            ));
+        }
+        Ok(())
+    }
+
     fn parse_array(&mut self) -> Result<Value, Error> {
         let open = self.pos;
+        self.enter()?;
         self.pos += 1;
         let mut array = Vec::new();
         loop {
@@ -336,6 +357,7 @@ impl<'a> Parser<'a> {
                 None => return Err(self.error_at(open, "unterminated array")),
                 Some(b']') => {
                     self.pos += 1;
+                    self.depth -= 1;
                     return Ok(Value::Array(array));
                 }
                 _ => {}
@@ -346,6 +368,7 @@ impl<'a> Parser<'a> {
                 Some(b',') => self.pos += 1,
                 Some(b']') => {
                     self.pos += 1;
+                    self.depth -= 1;
                     return Ok(Value::Array(array));
                 }
                 None => return Err(self.error_at(open, "unterminated array")),
@@ -355,6 +378,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_inline_table(&mut self) -> Result<Value, Error> {
+        self.enter()?;
         self.pos += 1;
         let mut table = Table::new();
         // Tables created by a dotted key *within this inline table*, which the
@@ -363,6 +387,7 @@ impl<'a> Parser<'a> {
         self.skip_spaces();
         if self.peek() == Some(b'}') {
             self.pos += 1;
+            self.depth -= 1;
             return Ok(Value::Table(table));
         }
         loop {
@@ -383,6 +408,7 @@ impl<'a> Parser<'a> {
                 Some(b',') => self.pos += 1,
                 Some(b'}') => {
                     self.pos += 1;
+                    self.depth -= 1;
                     return Ok(Value::Table(table));
                 }
                 // A newline here is the most likely mistake, and TOML 1.0

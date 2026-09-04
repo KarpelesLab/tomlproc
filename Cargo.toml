@@ -11,7 +11,3 @@ categories = ["parser-implementations", "config", "encoding"]
 readme = "README.md"
 
 [dependencies]
-
-[lints.rust]
-missing_docs = "deny"
-unsafe_code = "forbid"
