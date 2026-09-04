@@ -70,6 +70,7 @@
 
 mod datetime;
 mod error;
+mod macros;
 mod map;
 mod parser;
 mod ser;
@@ -77,7 +78,9 @@ mod value;
 
 pub use crate::datetime::{Date, Datetime, DatetimeKind, Offset, Time};
 pub use crate::error::Error;
-pub use crate::map::{IntoIter, Iter, IterMut, Keys, Table, Values, ValuesMut};
+pub use crate::map::{
+    Entry, IntoIter, Iter, IterMut, Keys, OccupiedEntry, Table, VacantEntry, Values, ValuesMut,
+};
 pub use crate::ser::{to_string, to_string_pretty};
 pub use crate::value::Value;
 
@@ -89,6 +92,41 @@ pub use crate::value::Value;
 /// ```
 pub fn parse(input: &str) -> Result<Table, Error> {
     parser::Parser::new(input).parse()
+}
+
+/// Parses a TOML document from bytes, which must be UTF-8.
+///
+/// ```
+/// let doc = tomlproc::parse_bytes(b"key = 'value'").unwrap();
+/// assert_eq!(doc["key"].as_str(), Some("value"));
+///
+/// let error = tomlproc::parse_bytes(b"key = 'v\xff'").unwrap_err();
+/// assert_eq!(error.to_string(), "TOML parse error at line 1, column 9: input is not valid UTF-8");
+/// ```
+pub fn parse_bytes(input: &[u8]) -> Result<Table, Error> {
+    match core::str::from_utf8(input) {
+        Ok(input) => parse(input),
+        Err(error) => {
+            // Report where the bad byte is, in the same shape as a syntax
+            // error, by measuring the part that did decode.
+            let offset = error.valid_up_to();
+            let valid = core::str::from_utf8(&input[..offset]).expect("valid up to here");
+            let line = valid.bytes().filter(|c| *c == b'\n').count() + 1;
+            let column = valid
+                .rsplit('\n')
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .count()
+                + 1;
+            Err(Error::parse(
+                "input is not valid UTF-8",
+                line,
+                column,
+                offset,
+            ))
+        }
+    }
 }
 
 impl core::str::FromStr for Table {

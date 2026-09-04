@@ -49,6 +49,18 @@ impl Value {
         }
     }
 
+    /// Whether two values are of the same type, without comparing them.
+    ///
+    /// ```
+    /// use tomlproc::Value;
+    ///
+    /// assert!(Value::from(1).same_type(&Value::from(2)));
+    /// assert!(!Value::from(1).same_type(&Value::from(1.0)));
+    /// ```
+    pub fn same_type(&self, other: &Value) -> bool {
+        core::mem::discriminant(self) == core::mem::discriminant(other)
+    }
+
     /// Returns the string, or `None` if this is not a string.
     pub fn as_str(&self) -> Option<&str> {
         match self {
