@@ -454,3 +454,65 @@ fn values_may_nest_to_the_documented_limit() {
     let input = format!("a = {}1{}", "[".repeat(128), "]".repeat(128));
     assert!(doc(&input).contains_key("a"));
 }
+
+// ----- TOML 1.1 ------------------------------------------------------------
+
+#[test]
+fn inline_tables_may_span_lines_with_a_trailing_comma() {
+    let table = doc(
+        "tbl = {\n    key      = \"a string\",\n    # a comment\n    moar-tbl = {\n        key = 1,\n    },\n}\n",
+    );
+    assert_eq!(table["tbl"]["key"].as_str(), Some("a string"));
+    assert_eq!(table["tbl"]["moar-tbl"]["key"].as_integer(), Some(1));
+
+    assert_eq!(doc("a = { b = 1, }")["a"]["b"].as_integer(), Some(1));
+    assert!(doc("a = {\n}")["a"].as_table().expect("a table").is_empty());
+    assert!(
+        doc("a = {\n\n# nothing\n\n}")["a"]
+            .as_table()
+            .expect("a table")
+            .is_empty()
+    );
+}
+
+#[test]
+fn the_new_string_escapes() {
+    // \xHH reaches the first 256 codepoints; \e is the escape character.
+    assert_eq!(
+        string(r#""null byte: \x00; letter a: \x61""#),
+        "null byte: \u{0}; letter a: a"
+    );
+    assert_eq!(string(r#""\e[""#), "\u{1b}[");
+    assert_eq!(string(r#""\xff""#), "\u{ff}");
+    // ...in multi-line strings too.
+    assert_eq!(string("\"\"\"\\x41\\e\"\"\""), "A\u{1b}");
+    // ...and in keys, which are basic strings.
+    assert!(doc(r#""\x41" = 1"#).contains_key("A"));
+}
+
+#[test]
+fn seconds_are_optional_in_times() {
+    for (input, expected) in [
+        ("2010-02-03 14:15", "2010-02-03T14:15:00"),
+        ("2010-02-03T14:15Z", "2010-02-03T14:15:00Z"),
+        ("2010-02-03T14:15-07:00", "2010-02-03T14:15:00-07:00"),
+        ("14:15", "14:15:00"),
+    ] {
+        let value = value(input);
+        let datetime = value.as_datetime().expect("a datetime");
+        assert_eq!(datetime.to_string(), expected, "{input}");
+    }
+}
+
+#[test]
+fn a_dotted_key_may_extend_a_table_a_header_only_created() {
+    // `[a.b.d]` creates `a.b` on its way to `a.b.d`, but does not *define* it,
+    // so a dotted key may still write into it.
+    let table = doc("[a.b.d]\nx = 1\n\n[a]\nb.c = 3\n");
+    assert_eq!(table["a"]["b"]["c"].as_integer(), Some(3));
+    assert_eq!(table["a"]["b"]["d"]["x"].as_integer(), Some(1));
+
+    // ...and a header may still define sub-tables underneath it afterwards.
+    let table = doc("[a.b.d]\n[a]\nb.c = 3\n\n[a.b.e]\ny = 2\n");
+    assert_eq!(table["a"]["b"]["e"]["y"].as_integer(), Some(2));
+}

@@ -5,11 +5,11 @@
 [![docs.rs](https://img.shields.io/docsrs/tomlproc)](https://docs.rs/tomlproc)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A [TOML 1.0.0](https://toml.io/en/v1.0.0) parser and serializer for Rust, with
+A [TOML 1.1.0](https://toml.io/en/v1.1.0) parser and serializer for Rust, with
 **no dependencies** — nothing outside the standard library, no build scripts,
 no proc macros, no `unsafe`.
 
-The whole of TOML 1.0.0 is implemented: all four string flavours, all four
+The whole of TOML 1.1.0 is implemented: all four string flavours, all four
 date-time types, dotted keys, inline tables, arrays of tables, and the
 redefinition rules that decide which of those are legal together.
 
@@ -150,6 +150,31 @@ nothing, and pays nothing.
 
 ## Conformance
 
+### TOML 1.1
+
+TOML [1.1.0](https://toml.io/en/v1.1.0) was released in December 2025, and this
+crate implements it. Over 1.0.0 it adds, all of which parse here:
+
+```toml
+tbl = {                     # newlines and a trailing comma
+    key = "a string",       # inside an inline table
+}
+esc = "\e[1m \x41"           # the \e and \xHH escapes
+dt  = 2010-02-03 14:15      # seconds are optional
+t   = 14:15
+```
+
+1.1 only adds to 1.0, so every 1.0 document still parses unchanged. What this
+crate *writes* stays inside 1.0, so its output can still be read by an older
+parser: seconds are always written, inline tables stay on one line, and control
+characters are escaped as `\u00XX`.
+
+That last point has one visible consequence: a time written `14:15` is read as
+14:15:00 and written back as `14:15:00`. The value is the same; the text is
+normalized, as it already is for comments, blank lines and table layout.
+
+### Strictness
+
 The parser is strict. It rejects, with a position, everything the
 specification calls invalid, including:
 
@@ -157,7 +182,7 @@ specification calls invalid, including:
 - redefining a table, or claiming a table that a dotted key created;
 - adding to an inline table after the fact;
 - mixing `[table]` and `[[array of tables]]` at the same name;
-- newlines or a trailing comma inside an inline table;
+- using a dotted key to redefine a table a header already defined;
 - integers outside the range of a 64-bit signed integer, leading zeros, and
   misplaced underscores;
 - dates and times that do not exist (`2023-02-29`, `25:00:00`);
@@ -180,8 +205,8 @@ files and the generated set:
 
 ```console
 $ cargo run --release --manifest-path tools/difftest/Cargo.toml -- ~/.cargo/registry/src
-1693 files + 400000 generated inputs
-agree: 401693  different values: 0  only tomlproc accepts: 0  only the reference accepts: 0
+1684 files + 400000 generated inputs
+agree: 401684  different values: 0  only tomlproc accepts: 0  only the reference accepts: 0
 ```
 
 That harness depends on the reference implementation, so it lives outside the

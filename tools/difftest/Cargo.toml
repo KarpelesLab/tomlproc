@@ -13,8 +13,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-# The reference implementation. Pinned to the 0.8 line, which targets TOML
-# 1.0.0 -- later releases target the 1.1 draft, whose extra allowances would
-# show up here as spurious disagreements.
-toml = "=0.8.23"
+# The reference implementation, pinned to the release that targets the same
+# spec version this crate does (TOML 1.1.0).
+toml = "=1.1.5"
 tomlproc = { path = "../.." }

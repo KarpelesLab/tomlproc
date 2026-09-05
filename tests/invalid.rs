@@ -66,6 +66,14 @@ fn a_dotted_key_cannot_reach_into_a_table_defined_by_a_header() {
     rejected_all(&[
         "[a.b]\nc = 1\n\n[a]\nb.d = 2",
         "[a]\n[a.b]\nc = 1\n[a]\nb.d = 2",
+        // A dotted key may write into a table a header only *created* on its
+        // way deeper -- but that defines it, so no header may claim it after.
+        "[a.b.d]\n[a]\nb.c = 3\n[a.b]",
+        // Nor may a key of any kind land on top of such a table.
+        "[a.b.d]\n[a]\nb = 3",
+        "[a.b.d]\n[a]\nb.d = 3",
+        // An array of tables is not open to dotted keys either.
+        "[[a.b]]\n[a]\nb.c = 3",
     ]);
 }
 
@@ -81,14 +89,16 @@ fn inline_tables_are_sealed() {
 }
 
 #[test]
-fn inline_tables_must_fit_on_one_line() {
+fn malformed_inline_tables() {
+    // Newlines and a trailing comma are allowed as of TOML 1.1; these are not.
     rejected_all(&[
-        "a = {\n  b = 1\n}",
-        "a = { b = 1,\n c = 2 }",
-        // No trailing comma, unlike arrays.
-        "a = { b = 1, }",
         "a = { , }",
         "a = { b = 1 c = 2 }",
+        "a = { b = 1,, c = 2 }",
+        "a = {",
+        "a = { b = 1",
+        "a = { b = }",
+        "a = { = 1 }",
     ]);
 }
 
@@ -198,9 +208,13 @@ fn malformed_datetimes() {
         "a = 1979-05-27T07:32:61Z",
         "a = 1979-05-27T07:32:00+25:00",
         "a = 1979-05-27T07:32:00.Z",
-        "a = 1979-05-27T07:32Z",
-        "a = 07:32",
         "a = 1979-05-27TZ",
+        // Seconds are optional as of TOML 1.1, but a fraction still belongs to
+        // seconds that are there.
+        "a = 07:32.5",
+        "a = 1979-05-27T07:32.5Z",
+        "a = 07:3",
+        "a = 07:32:",
     ]);
 }
 

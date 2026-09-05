@@ -287,21 +287,28 @@ fn looks_like_time(b: &[u8]) -> bool {
     b.len() >= 3 && b[2] == b':' && all_digits(&b[..2])
 }
 
-/// Parses `HH:MM:SS[.fraction]`, returning the time and the bytes consumed.
+/// Parses `HH:MM[:SS[.fraction]]`, returning the time and the bytes consumed.
+///
+/// Seconds have been optional since TOML 1.1; a time without them is on the
+/// minute.
 fn scan_time(b: &[u8]) -> Result<(Time, usize), &'static str> {
-    if b.len() < 8
-        || b[2] != b':'
-        || b[5] != b':'
-        || !all_digits(&b[..2])
-        || !all_digits(&b[3..5])
-        || !all_digits(&b[6..8])
-    {
-        return Err("expected a time of the form HH:MM:SS");
+    if b.len() < 5 || b[2] != b':' || !all_digits(&b[..2]) || !all_digits(&b[3..5]) {
+        return Err("expected a time of the form HH:MM");
     }
-    let (hour, minute, second) = (num(&b[..2]) as u8, num(&b[3..5]) as u8, num(&b[6..8]) as u8);
-    let mut i = 8;
+    let (hour, minute) = (num(&b[..2]) as u8, num(&b[3..5]) as u8);
+    let mut i = 5;
+    let mut second = 0;
     let mut nanosecond = 0u32;
-    if b.get(i) == Some(&b'.') {
+    let has_seconds = b.get(i) == Some(&b':');
+    if has_seconds {
+        if b.len() < i + 3 || !all_digits(&b[i + 1..i + 3]) {
+            return Err("expected two digits of seconds");
+        }
+        second = num(&b[i + 1..i + 3]) as u8;
+        i += 3;
+    }
+    // A fractional part belongs to the seconds, so it needs them.
+    if has_seconds && b.get(i) == Some(&b'.') {
         let start = i + 1;
         let mut end = start;
         while end < b.len() && b[end].is_ascii_digit() {
@@ -413,6 +420,28 @@ mod tests {
     }
 
     #[test]
+    fn seconds_are_optional_since_toml_1_1() {
+        // Written without seconds, read as being on the minute, and written
+        // back out with them.
+        assert_eq!(parse("07:32").to_string(), "07:32:00");
+        assert_eq!(parse("2010-02-03T14:15").to_string(), "2010-02-03T14:15:00");
+        assert_eq!(
+            parse("2010-02-03 14:15Z").to_string(),
+            "2010-02-03T14:15:00Z"
+        );
+        assert_eq!(
+            parse("2010-02-03T14:15+01:00").to_string(),
+            "2010-02-03T14:15:00+01:00"
+        );
+        assert_eq!(parse("07:32").time.unwrap().second, 0);
+
+        // A fractional part needs the seconds it belongs to.
+        for s in ["07:32.5", "2010-02-03T14:15.5", "07:32:", "07:3"] {
+            assert!(s.parse::<Datetime>().is_err(), "{s} should not parse");
+        }
+    }
+
+    #[test]
     fn space_separator_is_accepted_and_normalized() {
         assert_eq!(
             parse("1979-05-27 07:32:00Z").to_string(),
@@ -452,7 +481,6 @@ mod tests {
             "2023-02-29",
             "1979-05-27T24:00:00",
             "1979-05-27T07:61:00",
-            "07:32",
             "1979-05-27T07:32:00+24:00",
             "1979-05-27T07:32:00.",
             "1979-05-2",

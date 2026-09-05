@@ -1,7 +1,7 @@
-//! A self-contained [TOML 1.0.0](https://toml.io/en/v1.0.0) parser and
+//! A self-contained [TOML 1.1.0](https://toml.io/en/v1.1.0) parser and
 //! serializer.
 //!
-//! `tomlproc` implements the whole of TOML 1.0.0 -- every string flavour, all
+//! `tomlproc` implements the whole of TOML 1.1.0 -- every string flavour, all
 //! four date-time types, dotted keys, inline tables and arrays of tables --
 //! with no dependencies outside the standard library.
 //!
@@ -67,12 +67,20 @@
 //!
 //! # Conformance
 //!
+//! Everything TOML 1.1.0 added over 1.0.0 is accepted: newlines and trailing
+//! commas inside inline tables, the `\e` and `\xHH` string escapes, and times
+//! written without seconds. Since 1.1 only adds to 1.0, every 1.0 document
+//! still parses. What is *written* stays within 1.0, so a document this crate
+//! produces can be read by an older parser: seconds are always written, inline
+//! tables stay on one line, and control characters are escaped as `\u00XX`.
+//!
 //! The parser is strict, and rejects what the specification calls invalid:
 //! duplicate keys, extending an inline table, redefining a table, mismatched
 //! quotes, out-of-range integers and dates, bad underscore or leading-zero
-//! placement in numbers, control characters in strings and comments, and
-//! newlines inside inline tables. A bare carriage return is an error; `\r\n`
-//! in a multi-line string is normalized to `\n`, as the specification permits.
+//! placement in numbers, control characters in strings and comments, and a key
+//! of any kind landing on a table that is already defined. A bare carriage
+//! return is an error; `\r\n` in a multi-line string is normalized to `\n`, as
+//! the specification permits.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

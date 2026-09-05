@@ -406,18 +406,23 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_inline_table_entries(&mut self) -> Result<Value, Error> {
+        let open = self.pos;
         self.pos += 1;
         let mut table = Table::new();
         // Tables created by a dotted key *within this inline table*, which the
         // pairs that follow may keep extending.
         let mut dotted = HashSet::new();
-        self.skip_spaces();
-        if self.peek() == Some(b'}') {
-            self.pos += 1;
-            return Ok(Value::Table(table));
-        }
         loop {
-            self.skip_spaces();
+            // Newlines, comments and a trailing comma have been allowed inside
+            // an inline table since TOML 1.1.
+            self.skip_trivia()?;
+            if self.peek() == Some(b'}') {
+                self.pos += 1;
+                return Ok(Value::Table(table));
+            }
+            if self.pos >= self.bytes.len() {
+                return Err(self.error_at(open, "unterminated inline table"));
+            }
             let key_pos = self.pos;
             let keys = self.parse_key()?;
             self.skip_spaces();
@@ -429,20 +434,16 @@ impl<'a> Parser<'a> {
             let value = self.parse_value()?;
             insert_dotted(&mut table, &keys, value, &mut dotted)
                 .map_err(|message| self.error_at(key_pos, message))?;
-            self.skip_spaces();
+            self.skip_trivia()?;
             match self.peek() {
-                // No trailing comma, unlike an array: `{ a = 1, }` is invalid,
-                // and the next turn of the loop rejects it at the key.
+                // The next turn of the loop closes the table if that comma was
+                // a trailing one.
                 Some(b',') => self.pos += 1,
                 Some(b'}') => {
                     self.pos += 1;
                     return Ok(Value::Table(table));
                 }
-                // A newline here is the most likely mistake, and TOML 1.0
-                // forbids it, so name it.
-                Some(b'\n' | b'\r') => {
-                    return self.error("an inline table must fit on a single line");
-                }
+                None => return Err(self.error_at(open, "unterminated inline table")),
                 _ => return self.error("expected `,` or `}` in the inline table"),
             }
         }
@@ -595,8 +596,12 @@ impl<'a> Parser<'a> {
             b'n' => '\n',
             b'f' => '\u{c}',
             b'r' => '\r',
+            b'e' => '\u{1b}',
             b'"' => '"',
             b'\\' => '\\',
+            // `\xHH` reaches only the first 256 codepoints, which is exactly
+            // what two hex digits can say.
+            b'x' => return self.parse_escape_codepoint(2, start, out),
             b'u' => return self.parse_escape_codepoint(4, start, out),
             b'U' => return self.parse_escape_codepoint(8, start, out),
             _ => return Err(self.error_at(start, "invalid escape sequence")),
@@ -748,9 +753,17 @@ impl<'a> Parser<'a> {
                     insert_at(&mut self.root, &path, Value::Table(Table::new()));
                     self.dotted.insert(path.clone());
                 }
-                // Only tables this same syntax created may be extended: a
-                // dotted key cannot reach into a `[header]` table.
                 Slot::Table if self.dotted.contains(&path) => {}
+                // A table that a header only brought into being on its way
+                // somewhere deeper -- the `a.b` of `[a.b.c]` -- has been
+                // created but not *defined*, so a dotted key may still write
+                // into it. Doing so is what defines it, which is why no header
+                // may claim it afterwards.
+                Slot::Table if self.implicit.remove(&path) => {
+                    self.dotted.insert(path.clone());
+                }
+                // Anything else is a table already defined some other way, and
+                // a dotted key may not redefine it.
                 _ => {
                     return Err(self.error_at(
                         start,

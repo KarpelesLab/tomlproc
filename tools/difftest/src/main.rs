@@ -19,7 +19,7 @@ use std::path::Path;
 /// Renders a value so that two equal documents render identically, whatever
 /// map type or key order the parser used.
 macro_rules! canonicalize {
-    ($name:ident, $value:path) => {
+    ($name:ident, $value:path, $datetime:path) => {
         fn $name(value: &$value, out: &mut String) {
             use $value as V;
             match value {
@@ -27,7 +27,7 @@ macro_rules! canonicalize {
                 V::Integer(i) => write!(out, "i{i}").unwrap(),
                 V::Float(f) => write!(out, "f{f:?}").unwrap(),
                 V::Boolean(b) => write!(out, "b{b}").unwrap(),
-                V::Datetime(d) => write!(out, "d{d}").unwrap(),
+                V::Datetime(d) => write!(out, "d{}", $datetime(d)).unwrap(),
                 V::Array(items) => {
                     out.push('[');
                     for item in items {
@@ -59,8 +59,55 @@ macro_rules! canonicalize {
     };
 }
 
-canonicalize!(canonical_mine, tomlproc::Value);
-canonicalize!(canonical_reference, toml::Value);
+canonicalize!(canonical_mine, tomlproc::Value, mine_datetime);
+canonicalize!(canonical_reference, toml::Value, reference_datetime);
+
+/// Renders a date-time by what it *means*, not by how it was written.
+///
+/// The reference keeps `second: Option<u8>`, so it can write `14:15` back out
+/// as it was found; this crate stores a plain `u8` and normalizes the value to
+/// `14:15:00`. Both agree the time is on the minute, which is what a
+/// comparison of values should be asking.
+fn mine_datetime(value: &tomlproc::Datetime) -> String {
+    let mut out = String::new();
+    if let Some(date) = value.date {
+        write!(out, "{date}").unwrap();
+    }
+    if let Some(time) = value.time {
+        write!(
+            out,
+            "T{:02}:{:02}:{:02}.{:09}",
+            time.hour, time.minute, time.second, time.nanosecond
+        )
+        .unwrap();
+    }
+    if let Some(offset) = value.offset {
+        write!(out, "{offset}").unwrap();
+    }
+    out
+}
+
+fn reference_datetime(value: &toml::value::Datetime) -> String {
+    let mut out = String::new();
+    if let Some(date) = value.date {
+        write!(out, "{date}").unwrap();
+    }
+    if let Some(time) = value.time {
+        write!(
+            out,
+            "T{:02}:{:02}:{:02}.{:09}",
+            time.hour,
+            time.minute,
+            time.second.unwrap_or(0),
+            time.nanosecond.unwrap_or(0)
+        )
+        .unwrap();
+    }
+    if let Some(offset) = value.offset {
+        write!(out, "{offset}").unwrap();
+    }
+    out
+}
 
 #[derive(Default)]
 struct Stats {
@@ -68,7 +115,10 @@ struct Stats {
     different_values: u64,
     only_mine_accepts: u64,
     only_reference_accepts: u64,
-    reported: u32,
+    /// How many of each class have been printed, so one noisy class cannot
+    /// hide the others.
+    reported: std::collections::HashMap<&'static str, u32>,
+    disagreements: u64,
 }
 
 impl Stats {
@@ -82,25 +132,27 @@ impl Stats {
                     self.agree += 1;
                 } else {
                     self.different_values += 1;
-                    self.report(label, input, &format!("mine:      {a}\n  reference: {b}"));
+                    self.report("value", label, input, &format!("mine:      {a}\n  reference: {b}"));
                 }
             }
             (Err(_), Err(_)) => self.agree += 1,
             (Ok(_), Err(error)) => {
                 self.only_mine_accepts += 1;
-                self.report(label, input, &format!("the reference rejects it: {error}"));
+                self.report("only-mine", label, input, &format!("the reference rejects it: {error}"));
             }
             (Err(error), Ok(_)) => {
                 self.only_reference_accepts += 1;
-                self.report(label, input, &format!("tomlproc rejects it: {error}"));
+                self.report("only-reference", label, input, &format!("tomlproc rejects it: {error}"));
             }
         }
     }
 
-    fn report(&mut self, label: &str, input: &str, detail: &str) {
-        self.reported += 1;
-        if self.reported <= 20 {
-            println!("--- {label}\n  input: {input:?}\n  {detail}");
+    fn report(&mut self, class: &'static str, label: &str, input: &str, detail: &str) {
+        self.disagreements += 1;
+        let seen = self.reported.entry(class).or_default();
+        *seen += 1;
+        if *seen <= 8 {
+            println!("--- {class} / {label}\n  input: {input:?}\n  {detail}");
         }
     }
 }
@@ -133,6 +185,10 @@ const PIECES: &[&str] = &[
     "07:32:00", "1979-05-27T07:32:00Z", "1979-05-27 07:32:00", "é", "9223372036854775808",
     "x = ", "[t]", "[[t]]", "a=1", "a=[", "{a=1}", "\"\"", "''", "0", "00:00:00.9999999999",
     "-0", "+0",
+    // TOML 1.1: newlines and trailing commas in inline tables, the \x and \e
+    // escapes, and times without seconds.
+    "{\n", ",\n}", "{ a = 1, }", "\\x41", "\\xzz", "\\x4", "\\e", "07:32", "2010-02-03 14:15",
+    "2010-02-03T14:15Z", "07:32.5", "{ a = 1, # c\n b = 2 }",
 ];
 
 /// Whole statements, which is where the table-definition rules live: which
@@ -141,7 +197,8 @@ const STATEMENTS: &[&str] = &[
     "[a]", "[a.b]", "[a.b.c]", "[[a]]", "[[a.b]]", "[b]", "[\"a\"]", "[a.\"b\"]", "a = 1",
     "a.b = 1", "a.b.c = 1", "b = 2", "b.c = 3", "a = {}", "a = { b = 1 }", "a = { b.c = 1 }",
     "a = []", "a = [{}]", "a = [1]", "c = 1", "a.b = {}", "", "# comment", "[a.b.d]", "d = 1",
-    "[[a.b.c]]", "a = { b = { c = 1 } }",
+    "[[a.b.c]]", "a = { b = { c = 1 } }", "a = {\n  b = 1,\n}", "a = { b = 1, }",
+    "a = 14:15", "a = \"\\x41\\e\"",
 ];
 
 const ROUNDS: usize = 200_000;
@@ -182,7 +239,7 @@ fn main() {
         stats.only_mine_accepts,
         stats.only_reference_accepts,
     );
-    if stats.reported > 0 {
+    if stats.disagreements > 0 {
         std::process::exit(1);
     }
 }
