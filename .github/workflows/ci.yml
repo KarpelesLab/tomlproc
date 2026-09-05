@@ -36,17 +36,53 @@ jobs:
         if: runner.os == 'Linux' # formatting is platform-independent
         run: cargo fmt --all --check
 
-      # Both configurations: the crate is dependency-free by default, and the
-      # `serde` feature is the only thing that changes that.
+      # Every configuration: default (std), no_std + alloc, no_std with no
+      # allocator at all, and everything including serde.
       - name: Clippy (warnings denied)
         run: |
           cargo clippy --all-targets -- -D warnings
           cargo clippy --all-targets --all-features -- -D warnings
+          cargo clippy --all-targets --no-default-features --features alloc -- -D warnings
+          cargo clippy --all-targets --no-default-features -- -D warnings
 
       - name: Test
         run: |
           cargo test
           cargo test --all-features
+          cargo test --no-default-features --features alloc
+          cargo test --no-default-features
+
+  no_std:
+    name: no_std builds (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Bare-metal targets, where `std` does not exist: the only way to prove
+        # the crate really is `no_std` rather than merely not naming `std`.
+        # thumbv7em is 32-bit, which also catches 64-bit-only arithmetic.
+        target: [thumbv7em-none-eabi, riscv32imc-unknown-none-elf]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build with no allocator
+        run: cargo build --target ${{ matrix.target }} --no-default-features
+
+      - name: Build with alloc
+        run: cargo build --target ${{ matrix.target }} --no-default-features --features alloc
+
+      - name: Build with alloc and serde
+        run: cargo build --target ${{ matrix.target }} --no-default-features --features alloc,serde
 
   msrv:
     name: MSRV (Rust 1.88)
@@ -66,8 +102,11 @@ jobs:
         with:
           key: msrv
 
-      - name: cargo check --all-targets --all-features
-        run: cargo check --all-targets --all-features
+      - name: cargo check (every configuration)
+        run: |
+          cargo check --all-targets --all-features
+          cargo check --all-targets --no-default-features --features alloc
+          cargo check --all-targets --no-default-features
 
   docs:
     name: Docs build (warnings denied)

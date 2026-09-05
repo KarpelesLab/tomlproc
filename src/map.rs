@@ -2,8 +2,11 @@
 
 use core::fmt;
 use core::ops::Index;
-use std::collections::HashMap;
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use crate::collections::Map;
 use crate::value::Value;
 
 /// A TOML table: a map from keys to [`Value`]s that remembers the order in
@@ -29,7 +32,7 @@ use crate::value::Value;
 #[derive(Clone, Default)]
 pub struct Table {
     entries: Vec<(String, Value)>,
-    index: HashMap<String, usize>,
+    index: Map<String, usize>,
 }
 
 impl Table {
@@ -42,7 +45,7 @@ impl Table {
     pub fn with_capacity(capacity: usize) -> Table {
         Table {
             entries: Vec::with_capacity(capacity),
-            index: HashMap::with_capacity(capacity),
+            index: Map::default(),
         }
     }
 
@@ -415,7 +418,7 @@ pub struct IterMut<'a> {
 /// Created by `IntoIterator for Table`.
 #[derive(Debug)]
 pub struct IntoIter {
-    inner: std::vec::IntoIter<(String, Value)>,
+    inner: alloc::vec::IntoIter<(String, Value)>,
 }
 
 /// An iterator over a table's keys, in insertion order.
@@ -535,6 +538,7 @@ impl IntoIterator for Table {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn keeps_insertion_order() {

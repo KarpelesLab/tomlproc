@@ -1,5 +1,7 @@
 //! Writing documents back out, and parse/serialize round-trips.
 
+#![cfg(feature = "alloc")]
+
 use tomlproc::{Table, Value, parse, to_string, to_string_pretty};
 
 const EXAMPLE: &str = r#"

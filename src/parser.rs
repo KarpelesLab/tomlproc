@@ -5,8 +5,13 @@
 //! start of the current line, so an error can report a line and column without
 //! any bookkeeping on the happy path.
 
-use std::collections::HashSet;
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 
+use crate::collections::Set;
 use crate::datetime;
 use crate::error::Error;
 use crate::map::Table;
@@ -21,7 +26,10 @@ const MAX_DEPTH: usize = 128;
 
 /// One step of a path into the document: a table key, or an index into an
 /// array of tables.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+///
+/// `Ord` as well as `Hash` because the sets these go in are hashed with `std`
+/// and ordered without it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Seg {
     Key(String),
     Index(usize),
@@ -51,16 +59,16 @@ pub(crate) struct Parser<'a> {
     current: Path,
     /// Tables brought into being as an intermediate step of a `[a.b.c]`
     /// header. These may still be defined explicitly later on.
-    implicit: HashSet<Path>,
+    implicit: Set<Path>,
     /// Tables brought into being by a dotted key. A header may pass through
     /// one, but may not target it.
-    dotted: HashSet<Path>,
+    dotted: Set<Path>,
     /// Tables that came from inline table syntax, and everything nested inside
     /// them. These are sealed: nothing may be added to them.
-    frozen: HashSet<Path>,
+    frozen: Set<Path>,
     /// Arrays declared with `[[header]]`, the only ones a later `[[header]]`
     /// may append to.
-    arrays: HashSet<Path>,
+    arrays: Set<Path>,
     /// Where each value was written, recorded only when asked for.
     spans: Option<Spans>,
 }
@@ -79,10 +87,10 @@ impl<'a> Parser<'a> {
             depth: 0,
             root: Table::new(),
             current: Path::new(),
-            implicit: HashSet::new(),
-            dotted: HashSet::new(),
-            frozen: HashSet::new(),
-            arrays: HashSet::new(),
+            implicit: Set::new(),
+            dotted: Set::new(),
+            frozen: Set::new(),
+            arrays: Set::new(),
             spans: spans.then(Spans::default),
         }
     }
@@ -411,7 +419,7 @@ impl<'a> Parser<'a> {
         let mut table = Table::new();
         // Tables created by a dotted key *within this inline table*, which the
         // pairs that follow may keep extending.
-        let mut dotted = HashSet::new();
+        let mut dotted = Set::new();
         loop {
             // Newlines, comments and a trailing comma have been allowed inside
             // an inline table since TOML 1.1.
@@ -915,7 +923,7 @@ fn insert_dotted(
     table: &mut Table,
     keys: &[String],
     value: Value,
-    dotted: &mut HashSet<Vec<String>>,
+    dotted: &mut Set<Vec<String>>,
 ) -> Result<(), String> {
     let (last, parents) = keys.split_last().expect("a key has at least one part");
     let mut current = table;

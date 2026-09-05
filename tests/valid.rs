@@ -1,5 +1,7 @@
 //! Documents the specification calls valid.
 
+#![cfg(feature = "alloc")]
+
 use tomlproc::{DatetimeKind, Table, Value, parse};
 
 #[track_caller]

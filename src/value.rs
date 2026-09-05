@@ -1,5 +1,8 @@
 //! The TOML value model.
 
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 use core::ops::{Index, IndexMut};
 
@@ -372,6 +375,7 @@ impl<T: Into<Value>> FromIterator<T> for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn accessors_are_type_strict() {

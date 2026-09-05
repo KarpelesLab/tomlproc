@@ -5,6 +5,8 @@
 //! no arithmetic overflow. Whatever it does accept must also survive a
 //! serialize/re-parse round-trip.
 
+#![cfg(feature = "alloc")]
+
 use tomlproc::{parse, to_string, to_string_pretty};
 
 /// xorshift64*, so a failure reproduces from its seed alone.

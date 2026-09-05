@@ -11,6 +11,7 @@
 //! [`Value`]s:
 //!
 //! ```
+//! # #[cfg(feature = "alloc")] fn main() {
 //! let doc = tomlproc::parse(r#"
 //!     title = "TOML Example"
 //!
@@ -26,14 +27,19 @@
 //! assert_eq!(doc["title"].as_str(), Some("TOML Example"));
 //! assert_eq!(doc["owner"]["dob"].as_datetime().unwrap().date.unwrap().year, 1979);
 //! assert_eq!(doc["server"][0]["ports"][1].as_integer(), Some(8001));
+//! # }
+//! # #[cfg(not(feature = "alloc"))] fn main() {}
 //! ```
 //!
 //! Errors carry the line and column at which the problem was found:
 //!
 //! ```
+//! # #[cfg(feature = "alloc")] fn main() {
 //! let error = tomlproc::parse("a = 1\nb = [1, 2").unwrap_err();
 //! assert_eq!(error.line(), 2);
 //! assert_eq!(error.to_string(), "TOML parse error at line 2, column 5: unterminated array");
+//! # }
+//! # #[cfg(not(feature = "alloc"))] fn main() {}
 //! ```
 //!
 //! # Building and writing
@@ -41,6 +47,7 @@
 //! Tables can be built by hand and written back out with [`to_string`]:
 //!
 //! ```
+//! # #[cfg(feature = "alloc")] fn main() {
 //! let mut package = tomlproc::Table::new();
 //! package.insert("name", "tomlproc");
 //! package.insert("edition", "2024");
@@ -49,12 +56,34 @@
 //! doc.insert("package", package);
 //!
 //! assert_eq!(tomlproc::to_string(&doc), "[package]\nname = \"tomlproc\"\nedition = \"2024\"\n");
+//! # }
+//! # #[cfg(not(feature = "alloc"))] fn main() {}
 //! ```
 //!
 //! Parsing and serializing round-trip: key order, and the shape of tables and
 //! arrays of tables, are preserved. Formatting is not -- comments, blank lines
 //! and the choice between a header and an inline table belong to the document,
 //! not to the value model.
+//!
+//! # Features
+//!
+//! | Feature | Default | What it adds |
+//! | --- | --- | --- |
+//! | `std` | yes | Implies `alloc`, and indexes tables by hash |
+//! | `alloc` | via `std` | The value model, the parser and the serializer |
+//! | `serde` | no | [`tomlproc::serde`](crate::serde); implies `alloc` |
+//!
+//! The crate is `#![no_std]`. With `alloc` but not `std` everything here works
+//! unchanged, on ordered maps instead of hash maps; the public API is the
+//! same, and so is what the parser accepts. Turn `alloc` off too and what is
+//! left is [`Datetime`] and the types it is made of, which parse and format
+//! with no allocator at all -- the value model cannot follow, since a
+//! [`Table`] owns its keys and values.
+//!
+//! ```toml
+//! # embedded, with a heap
+//! tomlproc = { version = "0.1", default-features = false, features = ["alloc"] }
+//! ```
 //!
 //! # Beyond the value model
 //!
@@ -82,31 +111,62 @@
 //! return is an error; `\r\n` in a multi-line string is normalized to `\n`, as
 //! the specification permits.
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
-// On docs.rs, mark what the `serde` feature adds.
+// On docs.rs, mark what each feature adds.
 #![cfg_attr(docsrs, feature(doc_cfg))]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 mod datetime;
 mod error;
+
+#[cfg(feature = "alloc")]
+mod collections;
+#[cfg(feature = "alloc")]
 mod macros;
+#[cfg(feature = "alloc")]
 mod map;
+#[cfg(feature = "alloc")]
 mod parser;
+#[cfg(feature = "alloc")]
 mod ser;
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;
+#[cfg(feature = "alloc")]
 mod span;
+#[cfg(feature = "alloc")]
 mod value;
 
 pub use crate::datetime::{Date, Datetime, DatetimeKind, Offset, Time};
 pub use crate::error::Error;
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use crate::map::{
     Entry, IntoIter, Iter, IterMut, Keys, OccupiedEntry, Table, VacantEntry, Values, ValuesMut,
 };
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use crate::ser::{to_string, to_string_pretty};
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use crate::span::{Span, Spans};
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use crate::value::Value;
+
+/// Implementation details the `array!` macro needs to name. Not public API.
+#[cfg(feature = "alloc")]
+#[doc(hidden)]
+pub mod __private {
+    pub use alloc::vec::Vec;
+}
 
 /// Parses a TOML document.
 ///
@@ -114,6 +174,8 @@ pub use crate::value::Value;
 /// let doc = tomlproc::parse("key = \"value\"").unwrap();
 /// assert_eq!(doc["key"].as_str(), Some("value"));
 /// ```
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub fn parse(input: &str) -> Result<Table, Error> {
     Ok(parser::Parser::new(input, false).parse()?.0)
 }
@@ -136,6 +198,8 @@ pub fn parse(input: &str) -> Result<Table, Error> {
 /// assert_eq!(&source[span.value.clone()], "8080");
 /// assert_eq!(&source[span.range.clone()], "port = 8080");
 /// ```
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub fn parse_spans(input: &str) -> Result<(Table, Spans), Error> {
     let (table, spans) = parser::Parser::new(input, true).parse()?;
     Ok((table, spans.expect("spans were asked for")))
@@ -150,6 +214,8 @@ pub fn parse_spans(input: &str) -> Result<(Table, Spans), Error> {
 /// let error = tomlproc::parse_bytes(b"key = 'v\xff'").unwrap_err();
 /// assert_eq!(error.to_string(), "TOML parse error at line 1, column 9: input is not valid UTF-8");
 /// ```
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub fn parse_bytes(input: &[u8]) -> Result<Table, Error> {
     match core::str::from_utf8(input) {
         Ok(input) => parse(input),
@@ -176,6 +242,7 @@ pub fn parse_bytes(input: &[u8]) -> Result<Table, Error> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl core::str::FromStr for Table {
     type Err = Error;
 

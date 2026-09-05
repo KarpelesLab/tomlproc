@@ -1,5 +1,9 @@
 //! Turning a [`Value`] into any [`Deserialize`] type.
 
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 use ::serde::de::{
@@ -187,7 +191,7 @@ impl<'de> MapAccess<'de> for TableAccess {
 
 /// Walks an array, tagging any error with the index it came from.
 struct ArrayAccess {
-    items: std::vec::IntoIter<Value>,
+    items: alloc::vec::IntoIter<Value>,
     index: usize,
 }
 

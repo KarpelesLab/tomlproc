@@ -7,7 +7,8 @@
 
 A [TOML 1.1.0](https://toml.io/en/v1.1.0) parser and serializer for Rust, with
 **no dependencies** — nothing outside the standard library, no build scripts,
-no proc macros, no `unsafe`.
+no proc macros, no `unsafe`. `no_std` with an allocator, and it builds without
+one too.
 
 The whole of TOML 1.1.0 is implemented: all four string flavours, all four
 date-time types, dotted keys, inline tables, arrays of tables, and the
@@ -127,6 +128,35 @@ TOML error at `servers.beta.port`: invalid type: string "80", expected u16
 
 `Error::key_path()` returns that path on its own, for building your own
 diagnostics.
+
+## no_std
+
+The crate is `#![no_std]`, and its two default features can be turned off
+independently:
+
+| Feature | Default | What it adds |
+| --- | --- | --- |
+| `std` | yes | Implies `alloc`, and indexes tables by hash |
+| `alloc` | via `std` | The value model, the parser and the serializer |
+| `serde` | no | The `serde` integration; implies `alloc` |
+
+```toml
+# embedded, with a heap: the whole API, on ordered maps instead of hash maps
+tomlproc = { version = "0.1", default-features = false, features = ["alloc"] }
+```
+
+With `alloc` but no `std` the public API is unchanged, and so is what the
+parser accepts — the differential harness agrees on all 401,684 inputs in that
+configuration too. CI builds both bare-metal configurations for
+`thumbv7em-none-eabi` and `riscv32imc-unknown-none-elf`, where `std` does not
+exist to be accidentally depended on.
+
+Turning `alloc` off as well leaves `Datetime`, `Date`, `Time` and `Offset`,
+which parse and format with no allocator. The value model cannot follow: a
+`Table` owns its keys and values, so it *is* allocation. A no-allocator parser
+would be a different shape — a borrowing event parser, where escapes have no
+slice to point at and the table rules have nowhere to remember what they have
+seen. That is not implemented.
 
 ## Diagnostics
 

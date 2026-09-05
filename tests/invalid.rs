@@ -1,6 +1,8 @@
 //! Documents the specification calls invalid. A parser that accepts these is
 //! not a TOML parser.
 
+#![cfg(feature = "alloc")]
+
 use tomlproc::parse;
 
 #[track_caller]

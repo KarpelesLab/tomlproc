@@ -1,5 +1,7 @@
 //! Recording where each value was written.
 
+#![cfg(feature = "alloc")]
+
 use tomlproc::{Value, parse, parse_spans};
 
 const DOCUMENT: &str = r#"# a comment

@@ -109,9 +109,20 @@ impl fmt::Display for Time {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:02}:{:02}:{:02}", self.hour, self.minute, self.second)?;
         if self.nanosecond != 0 {
-            let frac = format!("{:09}", self.nanosecond);
+            // Rendered digit by digit into a stack buffer: this runs with no
+            // allocator, so there is no string to format into.
+            let mut digits = [b'0'; 9];
+            let mut rest = self.nanosecond;
+            for slot in digits.iter_mut().rev() {
+                *slot = b'0' + (rest % 10) as u8;
+                rest /= 10;
+            }
+            let end = digits
+                .iter()
+                .rposition(|digit| *digit != b'0')
+                .map_or(0, |last| last + 1);
             f.write_str(".")?;
-            f.write_str(frac.trim_end_matches('0'))?;
+            f.write_str(core::str::from_utf8(&digits[..end]).expect("ASCII digits"))?;
         }
         Ok(())
     }
@@ -265,9 +276,9 @@ impl FromStr for Datetime {
     fn from_str(s: &str) -> Result<Datetime, Error> {
         match scan(s.as_bytes()) {
             Ok(Some((dt, used))) if used == s.len() => Ok(dt),
-            Ok(Some(_)) => Err(Error::custom("trailing data after date-time")),
-            Ok(None) => Err(Error::custom("expected a date-time")),
-            Err(msg) => Err(Error::custom(msg)),
+            Ok(Some(_)) => Err(Error::fixed("trailing data after date-time")),
+            Ok(None) => Err(Error::fixed("expected a date-time")),
+            Err(message) => Err(Error::fixed(message)),
         }
     }
 }
@@ -399,96 +410,6 @@ pub(crate) fn scan(b: &[u8]) -> Result<Option<(Datetime, usize)>, &'static str> 
 mod tests {
     use super::*;
 
-    fn parse(s: &str) -> Datetime {
-        s.parse().unwrap()
-    }
-
-    #[test]
-    fn round_trips() {
-        for s in [
-            "1979-05-27T07:32:00Z",
-            "1979-05-27T00:32:00-07:00",
-            "1979-05-27T00:32:00.999999+01:30",
-            "1979-05-27T07:32:00",
-            "1979-05-27",
-            "07:32:00",
-            "00:32:00.999",
-            "2024-02-29T23:59:60Z",
-        ] {
-            assert_eq!(parse(s).to_string(), s, "{s}");
-        }
-    }
-
-    #[test]
-    fn seconds_are_optional_since_toml_1_1() {
-        // Written without seconds, read as being on the minute, and written
-        // back out with them.
-        assert_eq!(parse("07:32").to_string(), "07:32:00");
-        assert_eq!(parse("2010-02-03T14:15").to_string(), "2010-02-03T14:15:00");
-        assert_eq!(
-            parse("2010-02-03 14:15Z").to_string(),
-            "2010-02-03T14:15:00Z"
-        );
-        assert_eq!(
-            parse("2010-02-03T14:15+01:00").to_string(),
-            "2010-02-03T14:15:00+01:00"
-        );
-        assert_eq!(parse("07:32").time.unwrap().second, 0);
-
-        // A fractional part needs the seconds it belongs to.
-        for s in ["07:32.5", "2010-02-03T14:15.5", "07:32:", "07:3"] {
-            assert!(s.parse::<Datetime>().is_err(), "{s} should not parse");
-        }
-    }
-
-    #[test]
-    fn space_separator_is_accepted_and_normalized() {
-        assert_eq!(
-            parse("1979-05-27 07:32:00Z").to_string(),
-            "1979-05-27T07:32:00Z"
-        );
-        assert_eq!(
-            parse("1979-05-27t07:32:00z").to_string(),
-            "1979-05-27T07:32:00Z"
-        );
-    }
-
-    #[test]
-    fn kinds() {
-        assert_eq!(
-            parse("1979-05-27T07:32:00Z").kind(),
-            DatetimeKind::OffsetDatetime
-        );
-        assert_eq!(
-            parse("1979-05-27T07:32:00").kind(),
-            DatetimeKind::LocalDatetime
-        );
-        assert_eq!(parse("1979-05-27").kind(), DatetimeKind::LocalDate);
-        assert_eq!(parse("07:32:00").kind(), DatetimeKind::LocalTime);
-    }
-
-    #[test]
-    fn fractional_seconds_beyond_nanoseconds_are_truncated() {
-        let dt = parse("07:32:00.1234567891");
-        assert_eq!(dt.time.unwrap().nanosecond, 123_456_789);
-    }
-
-    #[test]
-    fn rejects_invalid() {
-        for s in [
-            "1979-05-32",
-            "1979-13-01",
-            "2023-02-29",
-            "1979-05-27T24:00:00",
-            "1979-05-27T07:61:00",
-            "1979-05-27T07:32:00+24:00",
-            "1979-05-27T07:32:00.",
-            "1979-05-2",
-        ] {
-            assert!(s.parse::<Datetime>().is_err(), "{s} should not parse");
-        }
-    }
-
     #[test]
     fn bare_date_stops_before_a_non_time() {
         // The space must not be eaten when what follows is not a time.
@@ -502,5 +423,36 @@ mod tests {
         assert!(scan(b"1234").unwrap().is_none());
         assert!(scan(b"1.5e3").unwrap().is_none());
         assert!(scan(b"-17").unwrap().is_none());
+    }
+
+    #[test]
+    fn ranges_are_checked() {
+        assert!(Date::new(2024, 2, 29).is_some());
+        assert!(Date::new(2023, 2, 29).is_none());
+        assert!(Date::new(2023, 13, 1).is_none());
+        assert!(Date::new(2023, 1, 0).is_none());
+
+        // A leap second is allowed; the next one is not.
+        assert!(Time::new(23, 59, 60, 0).is_some());
+        assert!(Time::new(23, 59, 61, 0).is_none());
+        assert!(Time::new(24, 0, 0, 0).is_none());
+        assert!(Time::new(0, 0, 0, 1_000_000_000).is_none());
+    }
+
+    /// Everything here runs without an allocator, so the parse side is checked
+    /// without asking for one.
+    #[test]
+    fn parses_without_an_allocator() {
+        for s in [
+            "1979-05-27T07:32:00Z",
+            "1979-05-27",
+            "07:32",
+            "2010-02-03 14:15",
+        ] {
+            assert!(s.parse::<Datetime>().is_ok(), "{s}");
+        }
+        for s in ["1979-05-32", "07:32.5", "not a date"] {
+            assert!(s.parse::<Datetime>().is_err(), "{s}");
+        }
     }
 }

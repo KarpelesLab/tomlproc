@@ -15,15 +15,22 @@ readme = "README.md"
 exclude = ["tools"]
 
 [features]
-# No default features: the crate is dependency-free unless you ask for more.
-default = []
+default = ["std"]
+# `std` implies `alloc`. On its own it only chooses the hash-based index for
+# tables; without it the crate is `no_std` and uses ordered maps instead.
+std = ["alloc", "serde?/std"]
+# The heap-backed half of the crate: the value model, the parser, the
+# serializer. Without it, what is left is the date-time types and their
+# parsing, which need no allocator.
+alloc = ["serde?/alloc"]
 # Serialize/Deserialize for the value model, plus `tomlproc::serde::{from_str,
 # to_string, ...}` for mapping documents onto your own types.
-serde = ["dep:serde"]
+serde = ["dep:serde", "alloc"]
 
 [dependencies]
-# The only dependency, and only when the `serde` feature asks for it.
-serde = { version = "1.0", optional = true }
+# The only dependency, and only when the `serde` feature asks for it. Its own
+# `std`/`alloc` features follow this crate's.
+serde = { version = "1.0", optional = true, default-features = false }
 
 [dev-dependencies]
 # Tests for the `serde` feature derive impls; never built for consumers.

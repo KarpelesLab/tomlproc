@@ -81,6 +81,9 @@
 mod de;
 mod ser;
 
+use alloc::format;
+use alloc::string::String;
+
 use ::serde::Serialize;
 use ::serde::de::DeserializeOwned;
 

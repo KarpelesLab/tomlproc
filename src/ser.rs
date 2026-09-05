@@ -1,5 +1,10 @@
 //! Writing values back out as TOML.
 
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
 use crate::map::Table;
 use crate::value::Value;
 

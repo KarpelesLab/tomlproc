@@ -1,5 +1,10 @@
 //! Turning any [`Serialize`] value into a [`Value`].
 
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
 use ::serde::ser::{self, Serialize};
 
 use crate::datetime::Datetime;

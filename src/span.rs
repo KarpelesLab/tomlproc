@@ -1,7 +1,9 @@
 //! Where each value was written in the source.
 
+use alloc::string::String;
 use core::ops::Range;
-use std::collections::HashMap;
+
+use crate::collections::Map;
 
 /// The stretch of source a value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +50,7 @@ pub struct Span {
 /// limitation [`Table::get_path`](crate::Table::get_path) has.
 #[derive(Debug, Clone, Default)]
 pub struct Spans {
-    entries: HashMap<String, Span>,
+    entries: Map<String, Span>,
 }
 
 impl Spans {

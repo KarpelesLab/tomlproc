@@ -47,7 +47,10 @@ macro_rules! table {
 /// ```
 #[macro_export]
 macro_rules! array {
-    ($($value:expr),* $(,)?) => {
-        $crate::Value::Array(::std::vec![$( $crate::Value::from($value) ),*])
-    };
+    () => { $crate::Value::Array($crate::__private::Vec::new()) };
+    ($($value:expr),+ $(,)?) => {{
+        let mut items = $crate::__private::Vec::new();
+        $( items.push($crate::Value::from($value)); )+
+        $crate::Value::Array(items)
+    }};
 }

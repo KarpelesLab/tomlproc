@@ -1,6 +1,8 @@
 //! The examples from `README.md`, kept compiling so the README cannot drift
 //! away from the API.
 
+#![cfg(feature = "alloc")]
+
 #[test]
 fn readme_examples() {
     let doc = tomlproc::parse(
