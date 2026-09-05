@@ -1,6 +1,6 @@
 [package]
 name = "tomlproc"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.88"
 description = "A self-contained TOML 1.1.0 parser and serializer with no external dependencies"
